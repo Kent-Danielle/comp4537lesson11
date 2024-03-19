@@ -1,14 +1,39 @@
-from typing import Optional
-
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
+model_name = "SamLowe/roberta-base-go_emotions"
 
-@app.get("/")
-async def root():
-    return {"message": "Hello World"}
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForSequenceClassification.from_pretrained(model_name)
 
-@app.get("/items/{item_id}")
-def read_item(item_id: int, q: Optional[str] = None):
-    return {"item_id": item_id, "q": q}
+
+@app.post("/predict_emotion/")
+async def predict_emotion(input_text: str):
+    inputs = tokenizer(input_text, return_tensors="pt")
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+
+    logits = outputs.logits
+    probabilities = torch.softmax(logits, dim=1)
+    y_hat_class = torch.argmax(probabilities, dim=1).item()
+
+    confidence = probabilities[0][y_hat_class].item()
+    label = model.config.id2label[y_hat_class]
+
+    output = {
+        "prediction": label,
+        "confidence": confidence
+    }
+
+    return JSONResponse(output)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app)
